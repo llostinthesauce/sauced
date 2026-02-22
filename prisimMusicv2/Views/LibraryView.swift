@@ -12,9 +12,7 @@ struct LibraryView: View {
     @State private var showMaxPinsAlert = false
 
     let columns = [
-        GridItem(.flexible(), spacing: 12),
-        GridItem(.flexible(), spacing: 12),
-        GridItem(.flexible(), spacing: 12)
+        GridItem(.adaptive(minimum: 120), spacing: 16)
     ]
 
     var body: some View {
@@ -51,6 +49,12 @@ struct LibraryView: View {
                         NavigationLink(destination: SongListView()) {
                             LibraryRow(icon: "music.note", title: "Songs", color: audioPlayer.primaryAccent)
                         }
+                        NavigationLink(destination: GenreListView()) {
+                            LibraryRow(icon: "guitars", title: "Genres", color: audioPlayer.primaryAccent)
+                        }
+                        NavigationLink(destination: DownloadsView()) {
+                            LibraryRow(icon: "arrow.down.circle.fill", title: "Downloads", color: audioPlayer.primaryAccent)
+                        }
                     }
                     .buttonStyle(.plain)
                     .padding(.horizontal)
@@ -69,10 +73,7 @@ struct LibraryView: View {
                     LazyVGrid(columns: columns, spacing: 20) {
                         ForEach(albums) { album in
                             NavigationLink(destination: AlbumDetailView(album: album)) {
-                                AlbumGridCell(
-                                    album: album,
-                                    size: (geometry.size.width - 64) / 3
-                                )
+                                AlbumGridCell(album: album)
                                 .contextMenu {
                                     Button {
                                         Task { await playAlbumNext(album) }
@@ -183,7 +184,6 @@ struct LibraryView: View {
 
 struct AlbumGridCell: View {
     let album: Album
-    let size: CGFloat
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -193,7 +193,7 @@ struct AlbumGridCell: View {
                 album: album.displayName,
                 size: 400
             )
-            .frame(width: size, height: size)
+            .aspectRatio(1, contentMode: .fit)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(album.displayName)

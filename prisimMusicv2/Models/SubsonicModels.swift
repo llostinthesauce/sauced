@@ -23,6 +23,9 @@ struct SubsonicResponse: Codable {
     let album: AlbumContainer?
     let artist: ArtistContainer?
     let directory: Directory?
+    let lyrics: Lyrics?
+    let genres: GenresResponse?
+    let songsByGenre: SongList?
     
     var isSuccess: Bool { status == "ok" }
     
@@ -169,5 +172,31 @@ struct Song: Codable, Identifiable, Hashable {
     
     static func == (lhs: Song, rhs: Song) -> Bool {
         lhs.id == rhs.id
+    }
+}
+
+// MARK: - Lyrics
+
+struct Lyrics: Codable {
+    let artist: String?
+    let title: String?
+    let value: String? // The actual lyrics text
+}
+
+// MARK: - Genres
+
+struct GenresResponse: Codable {
+    let genre: [Genre]?
+}
+
+struct Genre: Codable, Identifiable, Hashable {
+    let value: String      // genre name
+    let songCount: Int?
+    let albumCount: Int?
+    
+    var id: String { value }
+    
+    enum CodingKeys: String, CodingKey {
+        case value, songCount, albumCount
     }
 }

@@ -13,7 +13,7 @@ class NavidromeClient {
         didSet { UserDefaults.standard.set(username, forKey: "navidrome_user") }
     }
     var password: String {
-        didSet { UserDefaults.standard.set(password, forKey: "navidrome_pass") }
+        didSet { KeychainHelper.save(key: "navidrome_pass", value: password) }
     }
     
     // MARK: - State
@@ -26,7 +26,18 @@ class NavidromeClient {
     private init() {
         self.baseURL = UserDefaults.standard.string(forKey: "navidrome_url") ?? ""
         self.username = UserDefaults.standard.string(forKey: "navidrome_user") ?? ""
-        self.password = UserDefaults.standard.string(forKey: "navidrome_pass") ?? ""
+        
+        // Load password from Keychain, with one-time migration from UserDefaults
+        if let keychainPass = KeychainHelper.load(key: "navidrome_pass") {
+            self.password = keychainPass
+        } else if let legacyPass = UserDefaults.standard.string(forKey: "navidrome_pass"), !legacyPass.isEmpty {
+            // Migrate from UserDefaults → Keychain
+            self.password = legacyPass
+            KeychainHelper.save(key: "navidrome_pass", value: legacyPass)
+            UserDefaults.standard.removeObject(forKey: "navidrome_pass")
+        } else {
+            self.password = ""
+        }
     }
     
     func ping() async -> Bool {
@@ -38,6 +49,7 @@ class NavidromeClient {
             print("Ping failed: \(error)")
             self.isConnected = false
             self.lastError = error.localizedDescription
+            ErrorBanner.shared.show("Server connection failed")
             return false
         }
     }
@@ -62,12 +74,25 @@ class NavidromeClient {
         if query.isEmpty { return nil }
         let response: SubsonicResponse = try await request("search3.view", params: [
             "query": query,
-            "songCount": "20",
+            "artistCount": "10",
             "albumCount": "10",
-            "artistCount": "5"
+            "songCount": "25"
         ])
         return response.searchResult3
     }
+    
+    func getAllSongs(count: Int = 100, offset: Int = 0) async throws -> [Song] {
+        let response: SubsonicResponse = try await request("search3.view", params: [
+            "query": "", // Empty query in Navidrome returns everything
+            "songCount": String(count),
+            "songOffset": String(offset),
+            "artistCount": "0",
+            "albumCount": "0"
+        ])
+        return response.searchResult3?.song ?? []
+    }
+    
+    // MARK: - Album Details
     
     func getAlbumDetails(id: String) async throws -> AlbumContainer? {
         let response: SubsonicResponse = try await request("getAlbum.view", params: ["id": id])
@@ -99,6 +124,93 @@ class NavidromeClient {
     func toggleFavorite(id: String, isFavorite: Bool) async throws {
         let endpoint = isFavorite ? "star.view" : "unstar.view"
         let _: SubsonicResponse = try await request(endpoint, params: ["id": id])
+    }
+    
+    // MARK: - Scrobbling
+    
+    func scrobble(id: String) async throws {
+        let _: SubsonicResponse = try await request("scrobble.view", params: ["id": id])
+    }
+    
+    // MARK: - Playlist CRUD
+    
+    /// Create a new empty playlist with the given name.
+    func createPlaylist(name: String) async throws {
+        let _: SubsonicResponse = try await request("createPlaylist.view", params: ["name": name])
+    }
+    
+    /// Create a new playlist from a list of song IDs.
+    func createPlaylist(name: String, songIds: [String]) async throws {
+        let params: [String: String] = ["name": name]
+        // Subsonic API takes repeated "songId" params — we encode them as songId_0, songId_1, etc.
+        // Actually, the generic request builder uses simple key-value, so we need to handle this specially.
+        // For now, create the playlist first, then add songs.
+        let _: SubsonicResponse = try await request("createPlaylist.view", params: params)
+        
+        // Fetch the playlist list to find the newly created one
+        let playlists = try await getPlaylists()
+        if let newPlaylist = playlists.first(where: { $0.name == name }) {
+            try await addSongsToPlaylist(id: newPlaylist.id, songIds: songIds)
+        }
+    }
+    
+    /// Add songs to an existing playlist.
+    func addSongsToPlaylist(id: String, songIds: [String]) async throws {
+        for songId in songIds {
+            let _: SubsonicResponse = try await request("updatePlaylist.view", params: [
+                "playlistId": id,
+                "songIdToAdd": songId
+            ])
+        }
+    }
+    
+    /// Remove a song from a playlist by its index.
+    func removeSongFromPlaylist(id: String, index: Int) async throws {
+        let _: SubsonicResponse = try await request("updatePlaylist.view", params: [
+            "playlistId": id,
+            "songIndexToRemove": String(index)
+        ])
+    }
+    
+    /// Rename a playlist.
+    func renamePlaylist(id: String, name: String) async throws {
+        let _: SubsonicResponse = try await request("updatePlaylist.view", params: [
+            "playlistId": id,
+            "name": name
+        ])
+    }
+    
+    /// Delete a playlist.
+    func deletePlaylist(id: String) async throws {
+        let _: SubsonicResponse = try await request("deletePlaylist.view", params: ["id": id])
+    }
+    
+    // MARK: - Lyrics
+    
+    /// Fetch lyrics for a song by artist and title.
+    func getLyrics(artist: String?, title: String?) async throws -> Lyrics? {
+        var params: [String: String] = [:]
+        if let artist { params["artist"] = artist }
+        if let title { params["title"] = title }
+        let response: SubsonicResponse = try await request("getLyrics.view", params: params)
+        return response.lyrics
+    }
+    
+    // MARK: - Genres
+    
+    func getGenres() async throws -> [Genre] {
+        let response: SubsonicResponse = try await request("getGenres.view")
+        return response.genres?.genre ?? []
+    }
+    
+    /// Fetch songs by genre name.
+    func getSongsByGenre(genre: String, count: Int = 50, offset: Int = 0) async throws -> [Song] {
+        let response: SubsonicResponse = try await request("getSongsByGenre.view", params: [
+            "genre": genre,
+            "count": String(count),
+            "offset": String(offset)
+        ])
+        return response.songsByGenre?.song ?? []
     }
     
     // MARK: - URL Construction
@@ -134,7 +246,7 @@ class NavidromeClient {
             URLQueryItem(name: "t", value: token),
             URLQueryItem(name: "s", value: salt),
             URLQueryItem(name: "v", value: "1.16.1"), // API Version
-            URLQueryItem(name: "c", value: "PrismMusic"), // Client ID
+            URLQueryItem(name: "c", value: "Sauced"), // Client ID
             URLQueryItem(name: "f", value: "json") // Request JSON format
         ]
         
@@ -158,7 +270,9 @@ class NavidromeClient {
         
         let root = try JSONDecoder().decode(SubsonicResponseRoot.self, from: data)
         guard root.subsonicResponse.isSuccess else {
-            throw NSError(domain: "SubsonicError", code: root.subsonicResponse.error?.code ?? 0, userInfo: [NSLocalizedDescriptionKey: root.subsonicResponse.error?.message ?? "Unknown API Error"])
+            let msg = root.subsonicResponse.error?.message ?? "Unknown API Error"
+            ErrorBanner.shared.show(msg)
+            throw NSError(domain: "SubsonicError", code: root.subsonicResponse.error?.code ?? 0, userInfo: [NSLocalizedDescriptionKey: msg])
         }
         
         // We return the generic SubsonicResponse wrapper usually, as T is inferred to be SubsonicResponse

@@ -10,9 +10,22 @@
 		A11BAEBD2F4189C1001BD3FB /* prisimMusicv2.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = prisimMusicv2.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		A1B721A82F4AB7230073075D /* Exceptions for "prisimMusicv2" folder in "prisimMusicv2" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				"App-Info.plist",
+			);
+			target = A11BAEBC2F4189C1001BD3FB /* prisimMusicv2 */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		A11BAEBF2F4189C1001BD3FB /* prisimMusicv2 */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				A1B721A82F4AB7230073075D /* Exceptions for "prisimMusicv2" folder in "prisimMusicv2" target */,
+			);
 			path = prisimMusicv2;
 			sourceTree = "<group>";
 		};

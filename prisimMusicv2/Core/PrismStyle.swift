@@ -108,3 +108,19 @@ struct SectionHeader: View {
         .padding(.horizontal)
     }
 }
+
+// MARK: - Shared Utilities
+
+/// Format a TimeInterval (seconds as Double) into "m:ss" string.
+func formatTime(_ time: TimeInterval) -> String {
+    let minutes = Int(time) / 60
+    let seconds = Int(time) % 60
+    return String(format: "%d:%02d", minutes, seconds)
+}
+
+/// Format an Int (seconds) into "m:ss" string.
+func formatTime(_ seconds: Int) -> String {
+    let m = seconds / 60
+    let s = seconds % 60
+    return String(format: "%d:%02d", m, s)
+}

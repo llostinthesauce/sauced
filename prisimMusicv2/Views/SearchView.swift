@@ -17,7 +17,7 @@ struct SearchView: View {
                         ForEach(artists) { artist in
                             NavigationLink(destination: ArtistDetailView(artistId: artist.id, artistName: artist.name)) {
                                 HStack {
-                                    AsyncImage(url: client.getCoverArtURL(id: artist.coverArt ?? "", size: 100)) { image in
+                                    CachedAsyncImage(url: client.getCoverArtURL(id: artist.coverArt ?? "", size: 100)) { image in
                                         image.resizable().aspectRatio(contentMode: .fill)
                                     } placeholder: {
                                         Color.gray.opacity(0.3)
@@ -38,7 +38,7 @@ struct SearchView: View {
                         ForEach(albums) { album in
                             NavigationLink(destination: AlbumDetailView(album: album)) {
                                 HStack {
-                                    AsyncImage(url: client.getCoverArtURL(id: album.coverArt ?? "", size: 100)) { image in
+                                    CachedAsyncImage(url: client.getCoverArtURL(id: album.coverArt ?? "", size: 100)) { image in
                                         image.resizable().aspectRatio(contentMode: .fill)
                                     } placeholder: {
                                         Color.gray.opacity(0.3)
@@ -66,7 +66,7 @@ struct SearchView: View {
                                 audioPlayer.play(song: song)
                             } label: {
                                 HStack {
-                                    AsyncImage(url: client.getCoverArtURL(id: song.coverArt ?? "", size: 100)) { image in
+                                    CachedAsyncImage(url: client.getCoverArtURL(id: song.coverArt ?? "", size: 100)) { image in
                                         image.resizable().aspectRatio(contentMode: .fill)
                                     } placeholder: {
                                         Color.gray.opacity(0.3)
@@ -74,12 +74,22 @@ struct SearchView: View {
                                     .frame(width: 40, height: 40)
                                     .clipShape(RoundedRectangle(cornerRadius: 6))
                                     
-                                    VStack(alignment: .leading) {
-                                        Text(song.title)
-                                            .foregroundStyle(.primary)
-                                        Text(song.artist ?? "")
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
+                                    HStack(spacing: 6) {
+                                        if audioPlayer.currentSong?.id == song.id {
+                                            if audioPlayer.isPlaying {
+                                                NowPlayingBarsView(color: audioPlayer.primaryAccent).frame(width: 14, height: 14)
+                                            } else {
+                                                NowPlayingBarsPausedView(color: audioPlayer.primaryAccent).frame(width: 14, height: 14)
+                                            }
+                                        }
+                                        
+                                        VStack(alignment: .leading) {
+                                            Text(song.title)
+                                                .foregroundStyle(audioPlayer.currentSong?.id == song.id ? audioPlayer.primaryAccent : .primary)
+                                            Text(song.artist ?? "")
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                        }
                                     }
                                 }
                             }

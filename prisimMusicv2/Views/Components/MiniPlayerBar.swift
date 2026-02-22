@@ -11,7 +11,7 @@ struct MiniPlayerBar: View {
             VStack(spacing: 0) {
                 HStack(spacing: 12) {
                     // Album Art
-                    AsyncImage(url: client.getCoverArtURL(id: song.coverArt ?? "", size: 100)) { image in
+                    CachedAsyncImage(url: client.getCoverArtURL(id: song.coverArt ?? "", size: 100)) { image in
                         image.resizable()
                             .aspectRatio(contentMode: .fill)
                     } placeholder: {

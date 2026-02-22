@@ -29,6 +29,7 @@ struct ContentView: View {
                     }
                 }
             }
+            .tabViewStyle(.sidebarAdaptable)
             .toolbar(expandPlayer ? .hidden : .visible, for: .tabBar)
             .animation(.easeInOut(duration: 0.3), value: expandPlayer)
 
@@ -46,6 +47,9 @@ struct ContentView: View {
                     .animation(.spring(response: 0.5, dampingFraction: 0.8), value: expandPlayer)
                     .zIndex(1)
             }
+        }
+        .overlay {
+            ErrorBannerView()
         }
     }
 }

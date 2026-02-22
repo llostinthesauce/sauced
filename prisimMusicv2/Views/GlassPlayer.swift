@@ -13,6 +13,8 @@ struct GlassPlayer: View {
     @State private var showQueue = false
     @State private var showInfo = false
     @State private var showAlbum = false
+    @State private var showLyrics = false
+    @State private var sleepTimer = SleepTimerManager.shared
     
     // Dynamic State
     @State private var isFavorite = false
@@ -133,6 +135,21 @@ struct GlassPlayer: View {
                                     .font(.subheadline)
                                     .foregroundStyle(.white.opacity(0.5))
                                     .lineLimit(1)
+                            }
+                            
+                            // Audio Quality Badge
+                            if let song = audioPlayer.currentSong, isLossless(song) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "waveform")
+                                        .font(.system(size: 9, weight: .bold))
+                                    Text(qualityLabel(song))
+                                        .font(.system(size: 10, weight: .semibold))
+                                        .textCase(.uppercase)
+                                }
+                                .foregroundStyle(.white.opacity(0.7))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(.white.opacity(0.12), in: Capsule())
                             }
                         }
                         
@@ -282,7 +299,16 @@ struct GlassPlayer: View {
                     .padding(.bottom, 10)
                     
                     // Bottom Actions
-                    HStack(spacing: 60) {
+                    HStack(spacing: 30) {
+                        Button {
+                            showLyrics.toggle()
+                            selectionHaptic()
+                        } label: {
+                            Image(systemName: "quote.opening")
+                                .font(.title3)
+                                .foregroundStyle(.white.opacity(0.5))
+                        }
+                        
                         Button {
                             showInfo.toggle()
                             selectionHaptic()
@@ -295,6 +321,38 @@ struct GlassPlayer: View {
                         // AirPlay
                         AirPlayButton()
                             .frame(width: 30, height: 30)
+                        
+                        // Sleep Timer
+                        Menu {
+                            if sleepTimer.isActive {
+                                Button(role: .destructive) {
+                                    sleepTimer.cancel()
+                                    selectionHaptic()
+                                } label: {
+                                    Label("Cancel Timer", systemImage: "xmark")
+                                }
+                            } else {
+                                ForEach(SleepTimerManager.presets, id: \.minutes) { preset in
+                                    Button {
+                                        sleepTimer.start(minutes: preset.minutes)
+                                        selectionHaptic()
+                                    } label: {
+                                        Text(preset.label)
+                                    }
+                                }
+                            }
+                        } label: {
+                            VStack(spacing: 2) {
+                                Image(systemName: sleepTimer.isActive ? "moon.fill" : "moon.zzz")
+                                    .font(.title3)
+                                    .foregroundStyle(sleepTimer.isActive ? audioPlayer.primaryAccent : .white.opacity(0.5))
+                                if sleepTimer.isActive && !sleepTimer.endOfTrackMode {
+                                    Text(sleepTimer.formattedRemaining)
+                                        .font(.system(size: 8, weight: .medium))
+                                        .foregroundStyle(audioPlayer.primaryAccent)
+                                }
+                            }
+                        }
                         
                         Button {
                             showQueue.toggle()
@@ -350,6 +408,11 @@ struct GlassPlayer: View {
             } else {
                  Text("Album not found")
                     .presentationDetents([.medium])
+            }
+        }
+        .sheet(isPresented: $showLyrics) {
+            if let song = audioPlayer.currentSong {
+                LyricsView(song: song)
             }
         }
     }
@@ -420,11 +483,8 @@ struct GlassPlayer: View {
         }
     }
     
-    func formatTime(_ time: TimeInterval) -> String {
-        let minutes = Int(time) / 60
-        let seconds = Int(time) % 60
-        return String(format: "%d:%02d", minutes, seconds)
-    }
+    // formatTime is defined in PrismStyle.swift
+    
     
     func selectionHaptic() {
         let generator = UISelectionFeedbackGenerator()
@@ -440,6 +500,14 @@ struct GlassPlayer: View {
         if let bitRate = song.bitRate, bitRate > 320 { return true }
         if let suffix = song.suffix?.lowercased(), ["flac", "alac", "wav", "aiff"].contains(suffix) { return true }
         return false
+    }
+    
+    func qualityLabel(_ song: Song) -> String {
+        let codec = song.suffix?.uppercased() ?? "Lossless"
+        if let bitRate = song.bitRate {
+            return "\(codec) • \(bitRate) kbps"
+        }
+        return codec
     }
 }
 

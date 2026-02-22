@@ -123,9 +123,13 @@ struct AlbumDetailView: View {
                                     Spacer()
                                     
                                     if audioPlayer.currentSong?.id == song.id {
-                                        Image(systemName: "waveform")
-                                            .foregroundStyle(audioPlayer.primaryAccent)
-                                            .symbolEffect(.variableColor.iterative, isActive: audioPlayer.isPlaying)
+                                        if audioPlayer.isPlaying {
+                                            NowPlayingBarsView(color: audioPlayer.primaryAccent)
+                                                .frame(width: 14, height: 14)
+                                        } else {
+                                            NowPlayingBarsPausedView(color: audioPlayer.primaryAccent)
+                                                .frame(width: 14, height: 14)
+                                        }
                                     }
                                 }
                                 .padding(.vertical, 12)
@@ -160,10 +164,5 @@ struct AlbumDetailView: View {
         }
         isLoading = false
     }
-    
-    func formatTime(_ time: TimeInterval) -> String {
-        let minutes = Int(time) / 60
-        let seconds = Int(time) % 60
-        return String(format: "%d:%02d", minutes, seconds)
-    }
+    // formatTime is defined in PrismStyle.swift
 }

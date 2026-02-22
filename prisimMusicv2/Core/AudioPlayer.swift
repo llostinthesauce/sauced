@@ -14,9 +14,11 @@ class AudioPlayer {
     var duration: TimeInterval = 0
     
     // Queue System
-    var queue: [Song] = []       // Songs coming up next
-    var history: [Song] = []     // Songs already played
-    var originalQueue: [Song] = [] // Backup for shuffle
+    var queue: [Song] = [] {
+        didSet { enqueueNextTrack() }
+    }
+    var history: [Song] = []
+    var originalQueue: [Song] = []
     
     var isShuffled = false
     var repeatMode: RepeatMode = .none
@@ -29,12 +31,19 @@ class AudioPlayer {
     var accentColors: [Color] = [.purple, .indigo, .blue, .blue, .black.opacity(0.8), .indigo, .black, .black, .purple]
     var primaryAccent: Color { accentColors.first ?? .purple }
     
+    // Scrobbling – set to true once the 50% mark has been reported for the current track
+    private var hasScrobbled = false
+    
     // MARK: - Private
-    private var player = AVPlayer()
+    private var player = AVQueuePlayer()
     private var timeObserver: Any?
     private var endObserver: NSObjectProtocol?
     private var nowPlayingInfo = [String: Any]()
     private var colorExtractionTask: Task<Void, Never>?
+    
+    /// The song that corresponds to the item currently enqueued as "next" in AVQueuePlayer.
+    /// This lets us detect when AVQueuePlayer auto-advances and sync our state.
+    private var enqueuedNextSong: Song?
     
     // MARK: - Singleton
     static let shared = AudioPlayer()
@@ -48,9 +57,6 @@ class AudioPlayer {
     }
     
     /// Plays a song and sets the remaining songs in the context as the queue.
-    /// - Parameters:
-    ///   - song: The specific song to start with.
-    ///   - context: The full list of songs (e.g., Album tracks) the song belongs to.
     func play(song: Song, context: [Song]? = nil) {
         // 1. Update History
         if let current = currentSong {
@@ -62,14 +68,11 @@ class AudioPlayer {
         
         // 3. Setup Queue from Context
         if let context = context {
-            // Find index of song in context
             if let index = context.firstIndex(where: { $0.id == song.id }) {
-                // Queue is everything after this song
                 let nextSongs = Array(context.suffix(from: index + 1))
                 self.queue = nextSongs
-                self.originalQueue = nextSongs // Save for un-shuffle (not impl yet)
+                self.originalQueue = nextSongs
             } else {
-                // Song not in context? Just clear queue or set usage
                 self.queue = []
             }
         }
@@ -108,14 +111,13 @@ class AudioPlayer {
     
     func seek(to time: TimeInterval) {
         player.seek(to: CMTime(seconds: time, preferredTimescale: 1000))
-        // Optimistic update
         currentTime = time
         updateNowPlayingInfo()
     }
     
     func next() {
         // 1. Check Repeat One
-        if repeatMode == .one, let song = currentSong {
+        if repeatMode == .one, let _ = currentSong {
             player.seek(to: .zero)
             player.play()
             isPlaying = true
@@ -128,7 +130,6 @@ class AudioPlayer {
             let nextSong = queue.removeFirst()
             play(song: nextSong, context: nil)
         } else if repeatMode == .all && !history.isEmpty {
-            // Rebuild queue from history + current and restart
             var allSongs = history
             if let current = currentSong {
                 allSongs.append(current)
@@ -142,26 +143,21 @@ class AudioPlayer {
                 startPlayback(for: first)
             }
         } else {
-            // Queue empty, nothing to repeat
             isPlaying = false
             updateNowPlayingInfo()
         }
     }
     
     func previous() {
-        // If > 3 seconds in, restart song
         if currentTime > 3 {
             seek(to: 0)
             return
         }
         
-        // Else go to history
         if let prevSong = history.popLast() {
-            // Push current back to queue front
             if let current = currentSong {
                 queue.insert(current, at: 0)
             }
-            // Play previous without adding to history (we just popped it)
             self.currentSong = prevSong
             startPlayback(for: prevSong)
         } else {
@@ -175,13 +171,11 @@ class AudioPlayer {
             originalQueue = queue
             queue.shuffle()
         } else {
-            // Restore original order, filtering out songs already played
             let remainingIds = Set(queue.map { $0.id })
             queue = originalQueue.filter { remainingIds.contains($0.id) }
         }
     }
 
-    /// Picks a random song from the list, plays it, and shuffles the remaining queue.
     func shufflePlay(songs: [Song]) {
         guard !songs.isEmpty else { return }
         var pool = songs.shuffled()
@@ -189,7 +183,6 @@ class AudioPlayer {
         history.removeAll()
         currentSong = first
         queue = pool
-        // Store the original unshuffled order (minus the first song) so toggling shuffle off can restore it
         originalQueue = songs.filter { $0.id != first.id }
         isShuffled = true
         startPlayback(for: first)
@@ -197,24 +190,69 @@ class AudioPlayer {
 
     // MARK: - Internal
     
+    /// Called when AVQueuePlayer finishes a track.
+    /// If a next track was pre-enqueued, AVQueuePlayer auto-advances to it (gapless).
+    /// We just need to sync our state.
     private func setupEndOfTrackObserver() {
         endObserver = NotificationCenter.default.addObserver(
             forName: .AVPlayerItemDidPlayToEndTime,
             object: nil,
             queue: .main
-        ) { [weak self] _ in
-            self?.next()
+        ) { [weak self] notification in
+            guard let self = self else { return }
+            
+            // Notify sleep timer that a track ended
+            SleepTimerManager.shared.trackDidEnd()
+            
+            // Check if AVQueuePlayer already moved to the enqueued next song
+            if let nextSong = self.enqueuedNextSong, self.player.currentItem != nil {
+                // AVQueuePlayer auto-advanced — sync our state
+                if let current = self.currentSong {
+                    self.history.append(current)
+                }
+                self.currentSong = nextSong
+                self.enqueuedNextSong = nil
+                self.hasScrobbled = false
+                
+                // Remove this song from our logical queue (it was at index 0)
+                if !self.queue.isEmpty {
+                    self.queue.removeFirst()
+                }
+                
+                self.setupTimeObserver()
+                self.updateNowPlayingInfo()
+                self.updateArtwork(for: nextSong)
+                self.updateAccentColors(for: nextSong)
+            } else {
+                // No pre-enqueued track — use standard next() logic
+                self.enqueuedNextSong = nil
+                self.next()
+            }
         }
     }
     
     private func startPlayback(for song: Song) {
-        guard let url = NavidromeClient.shared.streamURL(for: song.id) else {
+        // Prefer local file if downloaded, otherwise stream
+        let url: URL?
+        if let localURL = DownloadManager.shared.localURL(for: song.id) {
+            url = localURL
+        } else {
+            url = NavidromeClient.shared.streamURL(for: song.id)
+        }
+        
+        guard let url else {
             print("No URL for song")
+            ErrorBanner.shared.show("Unable to stream \"\(song.title)\"")
             return
         }
         
+        // Clear AVQueuePlayer and start fresh
+        player.removeAllItems()
+        enqueuedNextSong = nil
+        hasScrobbled = false
+        
         let item = AVPlayerItem(url: url)
-        player.replaceCurrentItem(with: item)
+        player.insert(item, after: nil)
         player.play()
         isPlaying = true
         
@@ -222,6 +260,24 @@ class AudioPlayer {
         updateNowPlayingInfo()
         updateArtwork(for: song)
         updateAccentColors(for: song)
+        
+        // Pre-enqueue the next track for gapless playback
+        enqueueNextTrack()
+    }
+    
+    /// Pre-loads the next song into AVQueuePlayer so playback is gapless.
+    private func enqueueNextTrack() {
+        // Only enqueue if there's a next song and nothing is already enqueued
+        guard enqueuedNextSong == nil,
+              let nextSong = queue.first,
+              let url = NavidromeClient.shared.streamURL(for: nextSong.id) else { return }
+        
+        // Only enqueue if AVQueuePlayer currently has exactly 1 item (the current track)
+        guard player.items().count == 1 else { return }
+        
+        let nextItem = AVPlayerItem(url: url)
+        player.insert(nextItem, after: player.items().last)
+        enqueuedNextSong = nextSong
     }
     
     private func setupAudioSession() {
@@ -253,7 +309,6 @@ class AudioPlayer {
     }
     
     private func setupTimeObserver() {
-        // Remove existing observer if any
         if let observer = timeObserver {
             player.removeTimeObserver(observer)
             timeObserver = nil
@@ -267,8 +322,13 @@ class AudioPlayer {
             if let duration = self.player.currentItem?.duration.seconds, !duration.isNaN {
                 self.duration = duration
                 
-                // Update Now Playing Info periodically for progress bar on lock screen
-                if Int(self.currentTime) % 5 == 0 { // Update every 5 seconds to keep sync
+                // Scrobble at 50% mark
+                if !self.hasScrobbled && self.currentTime >= duration * 0.5 {
+                    self.hasScrobbled = true
+                    self.scrobbleCurrentTrack()
+                }
+                
+                if Int(self.currentTime) % 5 == 0 {
                      self.updateNowPlayingInfo()
                 }
             }
@@ -278,31 +338,26 @@ class AudioPlayer {
     private func setupRemoteCommands() {
         let commandCenter = MPRemoteCommandCenter.shared()
         
-        // Play
         commandCenter.playCommand.addTarget { [weak self] _ in
             self?.resume()
             return .success
         }
         
-        // Pause
         commandCenter.pauseCommand.addTarget { [weak self] _ in
             self?.pause()
             return .success
         }
         
-        // Next Track
         commandCenter.nextTrackCommand.addTarget { [weak self] _ in
             self?.next()
             return .success
         }
         
-        // Previous Track
         commandCenter.previousTrackCommand.addTarget { [weak self] _ in
             self?.previous()
             return .success
         }
         
-        // Scrubbing (Change Playback Position)
         commandCenter.changePlaybackPositionCommand.addTarget { [weak self] event in
             guard let self = self, let event = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
             self.seek(to: event.positionTime)
@@ -349,6 +404,7 @@ class AudioPlayer {
             }
         }
     }
+    
     private func updateAccentColors(for song: Song) {
         colorExtractionTask?.cancel()
         colorExtractionTask = Task {
@@ -373,23 +429,31 @@ class AudioPlayer {
             }
         }
     }
+    
+    // MARK: - Scrobbling
+    
+    private func scrobbleCurrentTrack() {
+        guard let song = currentSong else { return }
+        Task {
+            try? await NavidromeClient.shared.scrobble(id: song.id)
+        }
+    }
 
+    // MARK: - Public Helpers
+    
     func updateSong(_ newSong: Song) {
         if currentSong?.id == newSong.id {
             currentSong = newSong
         }
         
-        // Update in Queue
         if let index = queue.firstIndex(where: { $0.id == newSong.id }) {
             queue[index] = newSong
         }
         
-        // Update in History
         if let index = history.firstIndex(where: { $0.id == newSong.id }) {
             history[index] = newSong
         }
         
-        // Update in Original Queue
         if let index = originalQueue.firstIndex(where: { $0.id == newSong.id }) {
             originalQueue[index] = newSong
         }

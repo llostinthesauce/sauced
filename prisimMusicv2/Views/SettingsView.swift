@@ -9,6 +9,8 @@ struct SettingsView: View {
     @State private var password: String = ""
     @State private var pingStatus: String = ""
     @State private var isPinging = false
+    @State private var crossfadeDuration: Double = UserDefaults.standard.double(forKey: "crossfade_seconds")
+    @State private var cacheSize: String = "Calculating..."
 
     var body: some View {
         Form {
@@ -54,6 +56,39 @@ struct SettingsView: View {
                     .buttonStyle(.plain)
                 }
             }
+            
+            // MARK: - Playback
+            Section("Playback") {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("Crossfade")
+                        Spacer()
+                        Text(crossfadeDuration == 0 ? "Off" : "\(Int(crossfadeDuration))s")
+                            .foregroundStyle(.secondary)
+                    }
+                    Slider(value: $crossfadeDuration, in: 0...12, step: 1)
+                        .onChange(of: crossfadeDuration) { _, newValue in
+                            UserDefaults.standard.set(newValue, forKey: "crossfade_seconds")
+                        }
+                }
+            }
+            
+            // MARK: - Cache
+            Section("Storage") {
+                HStack {
+                    Text("Image Cache")
+                    Spacer()
+                    Text(cacheSize)
+                        .foregroundStyle(.secondary)
+                }
+                
+                Button(role: .destructive) {
+                    ImageCacheManager.shared.clearAll()
+                    updateCacheSize()
+                } label: {
+                    Text("Clear Image Cache")
+                }
+            }
 
             // MARK: - Server Connection
             Section("Server Connection") {
@@ -91,8 +126,8 @@ struct SettingsView: View {
             }
 
             Section("About") {
-                Text("PrismMusic v1.0")
-                Text("iOS 26 Concept Player")
+                Text("Sauced v1.0")
+                Text("A Navidrome Music Player for iOS")
             }
         }
         .navigationTitle("Settings")
@@ -100,7 +135,15 @@ struct SettingsView: View {
             serverURL = client.baseURL
             username = client.username
             password = client.password
+            updateCacheSize()
         }
+    }
+    
+    private func updateCacheSize() {
+        let bytes = ImageCacheManager.shared.diskCacheSize
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        cacheSize = formatter.string(fromByteCount: bytes)
     }
 
     func saveAndPing() async {
@@ -121,3 +164,4 @@ struct SettingsView: View {
         }
     }
 }
+

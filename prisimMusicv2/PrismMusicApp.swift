@@ -7,6 +7,7 @@ struct PrismMusicApp: App {
     @State private var pinStore = PinStore.shared
     @State private var artworkStore = PlaylistArtworkStore.shared
     @State private var themeStore = ThemeStore.shared
+    @State private var errorBanner = ErrorBanner.shared
 
     var body: some Scene {
         WindowGroup {
@@ -14,7 +15,7 @@ struct PrismMusicApp: App {
                 if !navidromeClient.baseURL.isEmpty {
                     ContentView()
                 } else {
-                    ServerSetupView()
+                    OnboardingView()
                 }
             }
             .environment(audioPlayer)
@@ -22,6 +23,7 @@ struct PrismMusicApp: App {
             .environment(pinStore)
             .environment(artworkStore)
             .environment(themeStore)
+            .environment(errorBanner)
             .preferredColorScheme(themeStore.selectedTheme.colorScheme)
             .onChange(of: themeStore.selectedTheme) { _, newTheme in
                 // Only apply theme mesh colors if the player hasn't overridden them with artwork colors.

@@ -3,9 +3,12 @@ import Observation
 
 struct QueueView: View {
     @Environment(AudioPlayer.self) var audioPlayer
+    @Environment(NavidromeClient.self) var client
     @Environment(\.dismiss) var dismiss
     
     @State private var editMode: EditMode = .inactive
+    @State private var showSaveDialog = false
+    @State private var playlistName = ""
 
     var body: some View {
         NavigationStack {
@@ -41,13 +44,26 @@ struct QueueView: View {
                     }
                 } footer: {
                     if !audioPlayer.queue.isEmpty {
-                        Button("Clear Queue") {
-                            withAnimation {
-                                audioPlayer.queue = []
+                        HStack(spacing: 20) {
+                            Button {
+                                playlistName = ""
+                                showSaveDialog = true
+                            } label: {
+                                Label("Save as Playlist", systemImage: "music.note.list")
+                                    .font(.caption)
                             }
+                            
+                            Spacer()
+                            
+                            Button("Clear Queue") {
+                                withAnimation {
+                                    audioPlayer.queue = []
+                                }
+                            }
+                            .foregroundStyle(.red)
+                            .font(.caption)
                         }
-                        .foregroundStyle(.red)
-                        .padding(.top)
+                        .padding(.top, 8)
                     }
                 }
                 
@@ -76,25 +92,44 @@ struct QueueView: View {
                     Button("Close") { dismiss() }
                 }
             }
+            .alert("Save as Playlist", isPresented: $showSaveDialog) {
+                TextField("Playlist Name", text: $playlistName)
+                Button("Save") {
+                    guard !playlistName.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+                    let songIds = audioPlayer.queue.map { $0.id }
+                    Task {
+                        try? await client.createPlaylist(name: playlistName, songIds: songIds)
+                    }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Save the current \(audioPlayer.queue.count) queued songs as a new playlist.")
+            }
         }
         .presentationDetents([.large])
     }
 }
 
 struct SongRow: View {
+    @Environment(AudioPlayer.self) var audioPlayer
     let song: Song
     let isPlaying: Bool
     
     var body: some View {
         HStack(spacing: 12) {
             if isPlaying {
-                Image(systemName: "waveform")
-                    .foregroundStyle(.purple)
+                if audioPlayer.isPlaying {
+                    NowPlayingBarsView(color: .purple)
+                        .frame(width: 16, height: 16)
+                } else {
+                    NowPlayingBarsPausedView(color: .purple)
+                        .frame(width: 16, height: 16)
+                }
             }
             
             VStack(alignment: .leading) {
                 Text(song.title)
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(isPlaying ? .purple : .primary)
                     .lineLimit(1)
                 Text(song.artist ?? "Unknown")
                     .font(.caption)
@@ -115,10 +150,7 @@ struct SongRow: View {
             }
         }
     }
-    
-    func formatTime(_ seconds: Int) -> String {
-        let m = seconds / 60
-        let s = seconds % 60
-        return String(format: "%d:%02d", m, s)
-    }
+    // formatTime is defined in PrismStyle.swift
 }
+
+
