@@ -53,3 +53,4 @@ On the first launch, navigate to the **Settings** tab (gear icon) and enter your
 - **Observation Framework** (`@Observable`)
 - **AVKit / AVFoundation**
 - **CryptoKit** (MD5 Auth)
+
